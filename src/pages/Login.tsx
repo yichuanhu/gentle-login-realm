@@ -18,40 +18,32 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      // 查询管理员用户
-      const { data, error: queryError } = await supabase
-        .from("admin_users")
-        .select("*")
-        .eq("username", username.trim())
-        .maybeSingle();
+      // 调用后端Edge Function进行验证
+      const { data, error: invokeError } = await supabase.functions.invoke("admin-login", {
+        body: { username: username.trim(), password },
+      });
 
-      if (queryError) {
+      if (invokeError) {
         throw new Error("验证失败，请稍后重试");
       }
 
-      if (!data) {
-        setError("用户名或密码错误");
-        setIsLoading(false);
-        return;
-      }
-
-      // 验证密码
-      if (data.password_hash !== password) {
-        setError("用户名或密码错误");
+      if (!data.success) {
+        setError(data.error || "登录失败");
         setIsLoading(false);
         return;
       }
 
       // 登录成功，存储会话
       localStorage.setItem("admin_session", JSON.stringify({
-        id: data.id,
-        username: data.username,
+        id: data.user.id,
+        username: data.user.username,
+        sessionToken: data.sessionToken,
         loginTime: new Date().toISOString()
       }));
 
       toast({
         title: "登录成功",
-        description: `欢迎回来，${data.username}！`,
+        description: `欢迎回来，${data.user.username}！`,
       });
 
       navigate("/dashboard");
