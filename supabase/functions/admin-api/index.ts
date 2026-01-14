@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
-import { hashSync, compareSync } from "https://esm.sh/bcryptjs@2.4.3";
+import bcrypt from "https://esm.sh/bcryptjs@2.4.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,7 +68,7 @@ serve(async (req) => {
         );
       }
 
-      const passwordHash = hashSync(password, 10);
+      const passwordHash = bcrypt.hashSync(password, 10);
 
       const { data: user, error } = await supabase
         .from("users")
@@ -105,7 +105,7 @@ serve(async (req) => {
 
       const updateData: any = { username, display_name, email, is_active };
       if (password) {
-        updateData.password_hash = hashSync(password, 10);
+        updateData.password_hash = bcrypt.hashSync(password, 10);
       }
 
       const { data: user, error } = await supabase
