@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
+import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -7,7 +8,6 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -15,7 +15,6 @@ serve(async (req) => {
   try {
     const { username, password } = await req.json();
 
-    // Validate input
     if (!username || !password) {
       return new Response(
         JSON.stringify({ success: false, error: "用户名和密码不能为空" }),
@@ -23,15 +22,13 @@ serve(async (req) => {
       );
     }
 
-    // Create Supabase client with service role key for backend operations
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Query admin user by username
     const { data: user, error: queryError } = await supabase
-      .from("admin_users")
-      .select("id, username, password_hash")
+      .from("users")
+      .select("id, username, password_hash, display_name, is_active")
       .eq("username", username.trim())
       .maybeSingle();
 
@@ -43,15 +40,39 @@ serve(async (req) => {
       );
     }
 
-    // Check if user exists and password matches
-    if (!user || user.password_hash !== password) {
+    if (!user || !user.is_active) {
       return new Response(
         JSON.stringify({ success: false, error: "用户名或密码错误" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Login successful - generate a simple session token
+    const passwordValid = await bcrypt.compare(password, user.password_hash);
+    if (!passwordValid) {
+      return new Response(
+        JSON.stringify({ success: false, error: "用户名或密码错误" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const { data: roles } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+
+    const userRoles = roles?.map(r => r.role) || [];
+    const { data: menus } = await supabase
+      .from("role_menus")
+      .select("menu_id, menus(*)")
+      .in("role", userRoles);
+
+    const uniqueMenus = menus?.reduce((acc: any[], item: any) => {
+      if (item.menus && !acc.find(m => m.id === item.menus.id)) {
+        acc.push(item.menus);
+      }
+      return acc;
+    }, []).sort((a: any, b: any) => a.sort_order - b.sort_order) || [];
+
     const sessionToken = crypto.randomUUID();
 
     return new Response(
@@ -60,6 +81,9 @@ serve(async (req) => {
         user: {
           id: user.id,
           username: user.username,
+          displayName: user.display_name,
+          roles: userRoles,
+          menus: uniqueMenus,
         },
         sessionToken,
       }),
