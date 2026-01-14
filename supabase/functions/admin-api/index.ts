@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { hashSync, compareSync } from "https://esm.sh/bcryptjs@2.4.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -41,7 +41,6 @@ serve(async (req) => {
 
       if (error) throw error;
 
-      // 获取每个用户的角色
       const usersWithRoles = await Promise.all(
         (data || []).map(async (user) => {
           const { data: roles } = await supabase
@@ -69,7 +68,7 @@ serve(async (req) => {
         );
       }
 
-      const passwordHash = await bcrypt.hash(password);
+      const passwordHash = hashSync(password, 10);
 
       const { data: user, error } = await supabase
         .from("users")
@@ -87,7 +86,6 @@ serve(async (req) => {
         throw error;
       }
 
-      // 添加角色
       if (roles && roles.length > 0) {
         await supabase
           .from("user_roles")
@@ -107,7 +105,7 @@ serve(async (req) => {
 
       const updateData: any = { username, display_name, email, is_active };
       if (password) {
-        updateData.password_hash = await bcrypt.hash(password);
+        updateData.password_hash = hashSync(password, 10);
       }
 
       const { data: user, error } = await supabase
@@ -119,7 +117,6 @@ serve(async (req) => {
 
       if (error) throw error;
 
-      // 更新角色
       if (roles) {
         await supabase.from("user_roles").delete().eq("user_id", id);
         if (roles.length > 0) {
@@ -138,7 +135,6 @@ serve(async (req) => {
     if (path.startsWith("/users/") && method === "DELETE") {
       const id = path.split("/")[2];
 
-      // 防止删除admin用户
       if (id === "00000000-0000-0000-0000-000000000001") {
         return new Response(
           JSON.stringify({ error: "不能删除默认管理员" }),
@@ -157,7 +153,6 @@ serve(async (req) => {
 
     // ===== 角色管理 =====
     if (path === "/roles" && method === "GET") {
-      // 返回所有角色及其菜单
       const roles = ["admin", "user", "viewer"];
       const rolesWithMenus = await Promise.all(
         roles.map(async (role) => {
@@ -279,7 +274,6 @@ serve(async (req) => {
       const body = await req.json();
       const { name, description, file_path, file_size, version, uploaded_by } = body;
 
-      // 后端文件大小检查 (1GB)
       if (file_size > 1073741824) {
         return new Response(
           JSON.stringify({ error: "文件大小不能超过1GB" }),
@@ -324,7 +318,6 @@ serve(async (req) => {
     if (path.startsWith("/packages/") && method === "DELETE") {
       const id = path.split("/")[2];
 
-      // 获取文件路径
       const { data: pkg } = await supabase
         .from("packages")
         .select("file_path")
@@ -363,7 +356,6 @@ serve(async (req) => {
       const body = await req.json();
       const { title, description, video_path, video_size, markdown_content, is_public, uploaded_by } = body;
 
-      // 后端视频大小检查 (200MB)
       if (video_size && video_size > 209715200) {
         return new Response(
           JSON.stringify({ error: "视频大小不能超过200MB" }),
@@ -414,7 +406,6 @@ serve(async (req) => {
     if (path.startsWith("/workflows/") && method === "DELETE") {
       const id = path.split("/")[2];
 
-      // 获取视频路径
       const { data: workflow } = await supabase
         .from("workflows")
         .select("video_path")
