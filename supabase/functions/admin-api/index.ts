@@ -529,13 +529,21 @@ serve(async (req) => {
       );
     }
 
-    // ===== 流程管理 (requires authenticated user) =====
+    // ===== 流程管理 (ownership-based access control) =====
     if (path === "/workflows" && method === "GET") {
-      // Any authenticated user can view workflows
-      const { data, error } = await supabase
+      // Check if user is admin
+      const isAdmin = await hasRole(supabase, userId, "admin");
+      
+      let query = supabase
         .from("workflows")
-        .select("*, users(username, display_name)")
-        .order("created_at", { ascending: false });
+        .select("*, users(username, display_name)");
+      
+      if (!isAdmin) {
+        // Non-admins can only see their own workflows and public ones
+        query = query.or(`uploaded_by.eq.${userId},is_public.eq.true`);
+      }
+      
+      const { data, error } = await query.order("created_at", { ascending: false });
 
       if (error) throw error;
 
@@ -572,8 +580,34 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/workflows/") && method === "PUT") {
-      // Any authenticated user can update workflows
       const id = path.split("/")[2];
+      
+      // Check ownership or admin role
+      const { data: workflow, error: fetchError } = await supabase
+        .from("workflows")
+        .select("uploaded_by")
+        .eq("id", id)
+        .maybeSingle();
+      
+      if (fetchError) throw fetchError;
+      
+      if (!workflow) {
+        return new Response(
+          JSON.stringify({ error: "流程不存在" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      const isAdmin = await hasRole(supabase, userId, "admin");
+      const isOwner = workflow.uploaded_by === userId;
+      
+      if (!isAdmin && !isOwner) {
+        return new Response(
+          JSON.stringify({ error: "权限不足：只能编辑自己的流程" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
       const body = await req.json();
       const { title, description, video_path, video_size, markdown_content, is_public } = body;
 
@@ -599,14 +633,33 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/workflows/") && method === "DELETE") {
-      // Any authenticated user can delete workflows
       const id = path.split("/")[2];
-
-      const { data: workflow } = await supabase
+      
+      // Check ownership or admin role
+      const { data: workflow, error: fetchError } = await supabase
         .from("workflows")
-        .select("video_path")
+        .select("uploaded_by, video_path")
         .eq("id", id)
-        .single();
+        .maybeSingle();
+      
+      if (fetchError) throw fetchError;
+      
+      if (!workflow) {
+        return new Response(
+          JSON.stringify({ error: "流程不存在" }),
+          { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      const isAdmin = await hasRole(supabase, userId, "admin");
+      const isOwner = workflow.uploaded_by === userId;
+      
+      if (!isAdmin && !isOwner) {
+        return new Response(
+          JSON.stringify({ error: "权限不足：只能删除自己的流程" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
 
       if (workflow?.video_path) {
         await supabase.storage.from("workflows").remove([workflow.video_path]);
