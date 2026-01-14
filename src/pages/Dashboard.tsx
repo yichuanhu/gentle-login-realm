@@ -22,7 +22,7 @@ export default function Dashboard() {
           <LayoutDashboard className="w-8 h-8 text-primary" />
         </div>
         <div>
-          <h1 className="text-3xl font-bold">欢迎回来，{session?.displayName || session?.username}！</h1>
+          <h1 className="text-3xl font-bold">欢迎回来，{session?.displayName || session?.email}！</h1>
           <p className="text-muted-foreground mt-1">这是您的管理控制台</p>
         </div>
       </div>
@@ -53,14 +53,14 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex justify-between py-2 border-b border-border">
-            <span className="text-muted-foreground">当前用户</span>
-            <span className="font-medium">{session?.username}</span>
+            <span className="text-muted-foreground">邮箱</span>
+            <span className="font-medium">{session?.email}</span>
           </div>
           <div className="flex justify-between py-2 border-b border-border">
             <span className="text-muted-foreground">显示名称</span>
             <span className="font-medium">{session?.displayName || "-"}</span>
           </div>
-          <div className="flex justify-between py-2 border-b border-border">
+          <div className="flex justify-between py-2">
             <span className="text-muted-foreground">用户角色</span>
             <div className="flex gap-2">
               {session?.roles.map((role) => (
@@ -69,10 +69,6 @@ export default function Dashboard() {
                 </span>
               ))}
             </div>
-          </div>
-          <div className="flex justify-between py-2">
-            <span className="text-muted-foreground">登录时间</span>
-            <span className="font-medium">{session?.loginTime ? new Date(session.loginTime).toLocaleString() : "-"}</span>
           </div>
         </CardContent>
       </Card>

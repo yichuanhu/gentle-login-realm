@@ -14,7 +14,7 @@ interface Menu {
 }
 
 interface RoleData {
-  role: string;
+  role: "admin" | "user" | "viewer";
   menus: Menu[];
 }
 
@@ -65,11 +65,11 @@ export default function RolesPage() {
     );
   };
 
-  const saveRole = async (role: string) => {
+  const saveRole = async (role: "admin" | "user" | "viewer") => {
     setSaving(role);
     try {
       const roleData = roles.find(r => r.role === role);
-      await api.updateRoleMenus(role, roleData?.menus.map(m => m.id) || []);
+      await api.updateRoleMenus(role as "admin" | "user" | "viewer", roleData?.menus.map(m => m.id) || []);
       toast({ title: "保存成功", description: `${ROLE_NAMES[role]}权限已更新` });
     } catch (error) {
       toast({ variant: "destructive", title: "保存失败", description: "请稍后重试" });

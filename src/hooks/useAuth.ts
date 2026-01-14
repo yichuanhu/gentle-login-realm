@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { hashPassword } from "@/lib/crypto";
+import type { User, Session } from "@supabase/supabase-js";
 
 export interface UserSession {
   id: string;
-  username: string;
+  email: string;
   displayName: string;
   roles: string[];
   menus: Array<{
@@ -18,101 +18,137 @@ export interface UserSession {
     sort_order: number;
     is_visible: boolean;
   }>;
-  sessionToken: string;
-  loginTime: string;
 }
 
 export function useAuth() {
   const [session, setSession] = useState<UserSession | null>(null);
+  const [supabaseSession, setSupabaseSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  useEffect(() => {
-    const stored = localStorage.getItem("admin_session");
-    if (stored) {
-      try {
-        setSession(JSON.parse(stored));
-      } catch {
-        localStorage.removeItem("admin_session");
-      }
-    }
-    setIsLoading(false);
-  }, []);
-
-  const login = useCallback(async (username: string, password: string) => {
-    setIsLoading(true);
+  // 加载用户角色和菜单
+  const loadUserData = useCallback(async (user: User) => {
     try {
-      // 前端先对密码进行SHA-256 hash，避免明文传输
-      const passwordHash = await hashPassword(password);
-      
-      const { data, error } = await supabase.functions.invoke("admin-login", {
-        body: { username, passwordHash },
+      // 获取用户角色
+      const { data: rolesData } = await supabase.rpc("get_user_roles", {
+        _user_id: user.id,
       });
 
-      if (error) throw new Error("验证失败，请稍后重试");
+      // 获取用户菜单
+      const { data: menusData } = await supabase.rpc("get_user_menus", {
+        _user_id: user.id,
+      });
 
-      if (!data.success) {
-        throw new Error(data.error || "登录失败");
-      }
+      // 获取用户 profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name")
+        .eq("id", user.id)
+        .maybeSingle();
 
-      const sessionData: UserSession = {
-        id: data.user.id,
-        username: data.user.username,
-        displayName: data.user.displayName,
-        roles: data.user.roles,
-        menus: data.user.menus,
-        sessionToken: data.sessionToken,
-        loginTime: new Date().toISOString(),
+      const userSession: UserSession = {
+        id: user.id,
+        email: user.email || "",
+        displayName: profile?.display_name || user.email || "",
+        roles: rolesData?.map((r: { role: string }) => r.role) || [],
+        menus: menusData || [],
       };
 
-      localStorage.setItem("admin_session", JSON.stringify(sessionData));
-      setSession(sessionData);
+      setSession(userSession);
+    } catch (error) {
+      console.error("Error loading user data:", error);
+    }
+  }, []);
 
-      toast({
-        title: "登录成功",
-        description: `欢迎回来，${data.user.displayName || data.user.username}！`,
+  useEffect(() => {
+    // 设置 auth state change listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        setSupabaseSession(session);
+        
+        if (session?.user) {
+          // 使用 setTimeout 避免在 callback 中直接调用 Supabase
+          setTimeout(() => {
+            loadUserData(session.user);
+          }, 0);
+        } else {
+          setSession(null);
+        }
+        
+        setIsLoading(false);
+      }
+    );
+
+    // 获取初始 session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSupabaseSession(session);
+      if (session?.user) {
+        loadUserData(session.user);
+      }
+      setIsLoading(false);
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadUserData]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      navigate("/dashboard");
-      return true;
+      if (error) {
+        throw error;
+      }
+
+      if (data.user) {
+        await loadUserData(data.user);
+        
+        toast({
+          title: "登录成功",
+          description: `欢迎回来！`,
+        });
+
+        navigate("/dashboard");
+        return true;
+      }
+
+      return false;
     } catch (error: any) {
       toast({
         variant: "destructive",
         title: "登录失败",
-        description: error.message,
+        description: error.message === "Invalid login credentials" 
+          ? "邮箱或密码错误" 
+          : error.message,
       });
       return false;
     } finally {
       setIsLoading(false);
     }
-  }, [navigate, toast]);
+  }, [navigate, toast, loadUserData]);
 
   const logout = useCallback(async () => {
-    // Invalidate session on server-side
-    const currentSession = session;
-    if (currentSession?.sessionToken) {
-      try {
-        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/logout`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${currentSession.sessionToken}`,
-            "Content-Type": "application/json",
-          },
-        });
-      } catch {
-        // Continue with local logout even if server call fails
-      }
+    try {
+      await supabase.auth.signOut();
+      setSession(null);
+      setSupabaseSession(null);
+      
+      toast({
+        title: "已退出登录",
+        description: "您已安全退出系统",
+      });
+      
+      navigate("/login");
+    } catch (error) {
+      console.error("Logout error:", error);
     }
-
-    localStorage.removeItem("admin_session");
-    setSession(null);
-    toast({
-      title: "已退出登录",
-      description: "您已安全退出系统",
-    });
-    navigate("/login");
-  }, [navigate, toast, session]);
+  }, [navigate, toast]);
 
   const hasRole = useCallback((role: string) => {
     return session?.roles.includes(role) || false;
@@ -122,13 +158,20 @@ export function useAuth() {
     return session?.menus.some(m => m.path === path) || false;
   }, [session]);
 
+  // 获取当前用户的 access token
+  const getAccessToken = useCallback(() => {
+    return supabaseSession?.access_token;
+  }, [supabaseSession]);
+
   return {
     session,
+    supabaseSession,
     isLoading,
     isAuthenticated: !!session,
     login,
     logout,
     hasRole,
     hasMenu,
+    getAccessToken,
   };
 }

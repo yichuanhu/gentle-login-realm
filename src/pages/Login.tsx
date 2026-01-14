@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Lock, User, AlertCircle } from "lucide-react";
+import { Lock, Mail, AlertCircle } from "lucide-react";
 
 export default function Login() {
   const { login, isLoading, isAuthenticated } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -21,14 +21,14 @@ export default function Login() {
     e.preventDefault();
     setError("");
 
-    if (!username.trim() || !password) {
-      setError("请输入用户名和密码");
+    if (!email.trim() || !password) {
+      setError("请输入邮箱和密码");
       return;
     }
 
-    const success = await login(username.trim(), password);
+    const success = await login(email.trim(), password);
     if (!success) {
-      setError("用户名或密码错误");
+      setError("邮箱或密码错误");
     }
   };
 
@@ -46,23 +46,23 @@ export default function Login() {
             <Lock className="w-8 h-8 text-primary" />
           </div>
           <CardTitle className="text-2xl font-bold">APA管理系统</CardTitle>
-          <CardDescription>请输入您的账号和密码登录</CardDescription>
+          <CardDescription>请输入您的邮箱和密码登录</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">用户名</Label>
+              <Label htmlFor="email">邮箱</Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  id="username"
-                  type="text"
-                  placeholder="请输入用户名"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
+                  id="email"
+                  type="email"
+                  placeholder="请输入邮箱"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   className="pl-10"
                   disabled={isLoading}
-                  autoComplete="username"
+                  autoComplete="email"
                 />
               </div>
             </div>
@@ -104,8 +104,6 @@ export default function Login() {
                 "登 录"
               )}
             </Button>
-
-            {/* Default credentials removed for security */}
           </form>
         </CardContent>
       </Card>

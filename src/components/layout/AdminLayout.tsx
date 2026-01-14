@@ -98,12 +98,12 @@ export function AdminLayout() {
         <div className="border-t border-border p-4">
           <div className={cn("flex items-center", collapsed ? "justify-center" : "gap-3")}>
             <div className="h-8 w-8 rounded-full bg-primary/20 flex items-center justify-center text-primary font-medium shrink-0">
-              {session?.displayName?.[0] || session?.username?.[0] || "U"}
+              {session?.displayName?.[0] || session?.email?.[0] || "U"}
             </div>
             {!collapsed && (
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {session?.displayName || session?.username}
+                  {session?.displayName || session?.email}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
                   {session?.roles.join(", ")}
