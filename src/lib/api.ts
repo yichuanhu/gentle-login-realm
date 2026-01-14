@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { hashPassword } from "@/lib/crypto";
 
 const getAuthHeader = () => {
   const session = localStorage.getItem("admin_session");
@@ -21,20 +22,30 @@ export const api = {
   },
 
   async createUser(userData: any) {
+    const body = { ...userData };
+    if (body.password) {
+      body.passwordHash = await hashPassword(body.password);
+      delete body.password;
+    }
     const { data, error } = await supabase.functions.invoke("admin-api/users", {
       method: "POST",
       headers: getAuthHeader(),
-      body: userData,
+      body,
     });
     if (error) throw error;
     return data;
   },
 
   async updateUser(id: string, userData: any) {
+    const body = { ...userData };
+    if (body.password) {
+      body.passwordHash = await hashPassword(body.password);
+      delete body.password;
+    }
     const { data, error } = await supabase.functions.invoke(`admin-api/users/${id}`, {
       method: "PUT",
       headers: getAuthHeader(),
-      body: userData,
+      body,
     });
     if (error) throw error;
     return data;
