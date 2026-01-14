@@ -57,25 +57,8 @@ serve(async (req) => {
     // 使用bcryptjs验证: 前端SHA-256 hash -> 后端bcrypt比较
     let passwordValid = bcrypt.compareSync(passwordHash, user.password_hash);
 
-    // 兼容：如果默认管理员的历史密码hash不匹配，用SHA-256("admin123")的hash登录后自动修复
-    // SHA-256("admin123") = 240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9
-    const adminPasswordSha256 = "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9";
-    if (
-      !passwordValid &&
-      user.id === "00000000-0000-0000-0000-000000000001" &&
-      user.username === "admin" &&
-      passwordHash === adminPasswordSha256
-    ) {
-      const newHash = bcrypt.hashSync(passwordHash, 10);
-      const { error: updateError } = await supabase
-        .from("users")
-        .update({ password_hash: newHash })
-        .eq("id", user.id);
-
-      if (!updateError) {
-        passwordValid = true;
-      }
-    }
+    // Hardcoded default password compatibility removed for security
+    // Admin accounts must be properly configured with secure passwords
 
     if (!passwordValid) {
       return new Response(

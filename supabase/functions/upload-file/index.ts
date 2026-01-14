@@ -97,29 +97,54 @@ serve(async (req) => {
       );
     }
 
-    // 文件类型验证
-    if (bucket === "packages" && fileType !== "exe") {
-      return new Response(
-        JSON.stringify({ error: "安装包只支持exe格式" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // ===== File Content Validation (Magic Bytes) =====
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    // 文件类型验证 - both extension AND magic bytes
+    if (bucket === "packages") {
+      if (fileType !== "exe") {
+        return new Response(
+          JSON.stringify({ error: "安装包只支持exe格式" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      // EXE magic bytes: MZ (0x4D 0x5A)
+      if (bytes.length < 2 || bytes[0] !== 0x4D || bytes[1] !== 0x5A) {
+        return new Response(
+          JSON.stringify({ error: "文件内容不是有效的EXE格式" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
-    if (bucket === "workflows" && fileType !== "mp4") {
-      return new Response(
-        JSON.stringify({ error: "视频只支持mp4格式" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    if (bucket === "workflows") {
+      if (fileType !== "mp4") {
+        return new Response(
+          JSON.stringify({ error: "视频只支持mp4格式" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      // MP4 magic bytes: ftyp at bytes 4-7 (0x66 0x74 0x79 0x70)
+      if (bytes.length < 8 || bytes[4] !== 0x66 || bytes[5] !== 0x74 || bytes[6] !== 0x79 || bytes[7] !== 0x70) {
+        return new Response(
+          JSON.stringify({ error: "文件内容不是有效的MP4格式" }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // 生成唯一文件名
     const ext = file.name.split(".").pop();
     const fileName = `${crypto.randomUUID()}.${ext}`;
 
+    // Set proper content type based on bucket
+    const contentType = bucket === "workflows" ? "video/mp4" : "application/octet-stream";
+
     const { data, error } = await supabase.storage
       .from(bucket)
-      .upload(fileName, file, {
-        contentType: file.type,
+      .upload(fileName, bytes, {
+        contentType,
         upsert: false,
       });
 

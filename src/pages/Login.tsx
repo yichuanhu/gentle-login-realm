@@ -105,9 +105,7 @@ export default function Login() {
               )}
             </Button>
 
-            <p className="text-xs text-center text-muted-foreground">
-              默认账号：admin / admin123
-            </p>
+            {/* Default credentials removed for security */}
           </form>
         </CardContent>
       </Card>
