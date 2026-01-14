@@ -54,11 +54,22 @@ serve(async (req) => {
       );
     }
 
+    // 处理密码验证
+    let passwordToCheck = passwordHash;
+    
+    // 检查是否是降级方案（非安全上下文中 crypto.subtle 不可用）
+    if (passwordHash.startsWith("plain:")) {
+      // 解码 base64 获取原始密码，然后进行 SHA-256 hash
+      const plainPassword = atob(passwordHash.slice(6));
+      const encoder = new TextEncoder();
+      const data = encoder.encode(plainPassword);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      passwordToCheck = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+    
     // 使用bcryptjs验证: 前端SHA-256 hash -> 后端bcrypt比较
-    let passwordValid = bcrypt.compareSync(passwordHash, user.password_hash);
-
-    // Hardcoded default password compatibility removed for security
-    // Admin accounts must be properly configured with secure passwords
+    const passwordValid = bcrypt.compareSync(passwordToCheck, user.password_hash);
 
     if (!passwordValid) {
       return new Response(
