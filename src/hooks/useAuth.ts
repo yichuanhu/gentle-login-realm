@@ -167,7 +167,8 @@ export function useAuth() {
     session,
     supabaseSession,
     isLoading,
-    isAuthenticated: !!session,
+    // 使用 supabaseSession 判断是否已认证，避免 loadUserData 完成前被判断为未登录
+    isAuthenticated: !!supabaseSession,
     login,
     logout,
     hasRole,
