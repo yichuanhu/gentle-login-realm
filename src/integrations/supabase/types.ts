@@ -92,15 +92,31 @@ export type Database = {
           uploaded_by?: string | null
           version?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "packages_uploaded_by_fkey"
-            columns: ["uploaded_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       role_menus: {
         Row: {
@@ -153,15 +169,7 @@ export type Database = {
           token?: string
           user_id?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "sessions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
       user_roles: {
         Row: {
@@ -181,47 +189,6 @@ export type Database = {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
           user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "user_roles_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      users: {
-        Row: {
-          created_at: string
-          display_name: string | null
-          email: string | null
-          id: string
-          is_active: boolean
-          password_hash: string
-          updated_at: string
-          username: string
-        }
-        Insert: {
-          created_at?: string
-          display_name?: string | null
-          email?: string | null
-          id?: string
-          is_active?: boolean
-          password_hash: string
-          updated_at?: string
-          username: string
-        }
-        Update: {
-          created_at?: string
-          display_name?: string | null
-          email?: string | null
-          id?: string
-          is_active?: boolean
-          password_hash?: string
-          updated_at?: string
-          username?: string
         }
         Relationships: []
       }
@@ -262,15 +229,7 @@ export type Database = {
           video_path?: string | null
           video_size?: number | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "workflows_uploaded_by_fkey"
-            columns: ["uploaded_by"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Views: {
@@ -279,6 +238,24 @@ export type Database = {
     Functions: {
       cleanup_expired_sessions: { Args: never; Returns: undefined }
       get_current_user_id: { Args: never; Returns: string }
+      get_user_menus: {
+        Args: { _user_id: string }
+        Returns: {
+          icon: string
+          id: string
+          is_visible: boolean
+          name: string
+          parent_id: string
+          path: string
+          sort_order: number
+        }[]
+      }
+      get_user_roles: {
+        Args: { _user_id: string }
+        Returns: {
+          role: Database["public"]["Enums"]["app_role"]
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
