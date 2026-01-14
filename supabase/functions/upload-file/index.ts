@@ -6,6 +6,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper function to check user role
+async function hasRole(supabase: any, userId: string, role: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", role)
+    .maybeSingle();
+  return !!data;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -15,6 +26,41 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // ===== Authentication Check =====
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "未授权访问" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    
+    // Validate session token
+    const { data: session, error: sessionError } = await supabase
+      .from("sessions")
+      .select("user_id, expires_at")
+      .eq("token", token)
+      .maybeSingle();
+
+    if (sessionError || !session) {
+      return new Response(
+        JSON.stringify({ error: "会话无效" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check session expiration
+    if (new Date(session.expires_at) < new Date()) {
+      return new Response(
+        JSON.stringify({ error: "会话已过期" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = session.user_id;
 
     const formData = await req.formData();
     const file = formData.get("file") as File;
@@ -26,6 +72,19 @@ serve(async (req) => {
         JSON.stringify({ error: "缺少必要参数" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // ===== Role-based access control for packages bucket =====
+    if (bucket === "packages") {
+      const isAdmin = await hasRole(supabase, userId, "admin");
+      const isUser = await hasRole(supabase, userId, "user");
+      
+      if (!isAdmin && !isUser) {
+        return new Response(
+          JSON.stringify({ error: "权限不足：只有管理员或用户可以上传安装包" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // 文件大小验证
@@ -87,6 +146,7 @@ serve(async (req) => {
         path: data.path,
         publicUrl,
         size: file.size,
+        uploadedBy: userId,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

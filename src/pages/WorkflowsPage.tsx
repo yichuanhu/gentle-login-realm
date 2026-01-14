@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Plus, Pencil, Trash2, Loader2, Upload, GitBranch, Eye, EyeOff, Play } from "lucide-react";
 import ReactMarkdown from "react-markdown";
+import rehypeSanitize from "rehype-sanitize";
 
 interface Workflow {
   id: string;
@@ -390,7 +391,7 @@ export default function WorkflowsPage() {
                 <TabsContent value="preview">
                   <div className="border rounded-lg p-4 min-h-[200px] prose prose-sm max-w-none dark:prose-invert">
                     {formData.markdown_content ? (
-                      <ReactMarkdown>{formData.markdown_content}</ReactMarkdown>
+                      <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{formData.markdown_content}</ReactMarkdown>
                     ) : (
                       <p className="text-muted-foreground">暂无内容</p>
                     )}
@@ -435,7 +436,7 @@ export default function WorkflowsPage() {
             )}
             {previewingWorkflow?.markdown_content && (
               <div className="border rounded-lg p-4 prose prose-sm max-w-none dark:prose-invert">
-                <ReactMarkdown>{previewingWorkflow.markdown_content}</ReactMarkdown>
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{previewingWorkflow.markdown_content}</ReactMarkdown>
               </div>
             )}
           </div>
