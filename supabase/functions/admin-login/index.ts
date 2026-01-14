@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.90.1";
-import * as bcrypt from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { compareSync, hashSync } from "https://esm.sh/bcryptjs@2.4.3";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,7 +47,8 @@ serve(async (req) => {
       );
     }
 
-    const passwordValid = await bcrypt.compare(password, user.password_hash);
+    // 使用bcryptjs进行密码验证
+    const passwordValid = compareSync(password, user.password_hash);
     if (!passwordValid) {
       return new Response(
         JSON.stringify({ success: false, error: "用户名或密码错误" }),
