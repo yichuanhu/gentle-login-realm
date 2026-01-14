@@ -124,6 +124,18 @@ serve(async (req) => {
 
     const userId = sessionResult.userId!;
 
+    // ===== Server-side Logout =====
+    if (path === "/logout" && method === "POST") {
+      const token = authHeader?.replace("Bearer ", "");
+      if (token) {
+        await supabase.from("sessions").delete().eq("token", token);
+      }
+      return new Response(
+        JSON.stringify({ success: true }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // ===== 用户管理 (requires admin role) =====
     if (path === "/users" && method === "GET") {
       if (!await hasRole(supabase, userId, "admin")) {

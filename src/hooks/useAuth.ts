@@ -88,7 +88,23 @@ export function useAuth() {
     }
   }, [navigate, toast]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    // Invalidate session on server-side
+    const currentSession = session;
+    if (currentSession?.sessionToken) {
+      try {
+        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-api/logout`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${currentSession.sessionToken}`,
+            "Content-Type": "application/json",
+          },
+        });
+      } catch {
+        // Continue with local logout even if server call fails
+      }
+    }
+
     localStorage.removeItem("admin_session");
     setSession(null);
     toast({
@@ -96,7 +112,7 @@ export function useAuth() {
       description: "您已安全退出系统",
     });
     navigate("/login");
-  }, [navigate, toast]);
+  }, [navigate, toast, session]);
 
   const hasRole = useCallback((role: string) => {
     return session?.roles.includes(role) || false;
