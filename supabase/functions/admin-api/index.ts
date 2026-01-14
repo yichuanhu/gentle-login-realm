@@ -7,6 +7,72 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper function to validate session and get user info
+async function validateSession(supabase: any, authHeader: string | null): Promise<{ valid: boolean; userId?: string; error?: string }> {
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return { valid: false, error: "未授权访问" };
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  if (!token) {
+    return { valid: false, error: "无效的授权令牌" };
+  }
+
+  // Query session from database
+  const { data: session, error: sessionError } = await supabase
+    .from("sessions")
+    .select("user_id, expires_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  if (sessionError || !session) {
+    return { valid: false, error: "会话无效或已过期" };
+  }
+
+  // Check if session is expired
+  if (new Date(session.expires_at) < new Date()) {
+    // Clean up expired session
+    await supabase.from("sessions").delete().eq("token", token);
+    return { valid: false, error: "会话已过期，请重新登录" };
+  }
+
+  // Verify user is still active
+  const { data: user, error: userError } = await supabase
+    .from("users")
+    .select("id, is_active")
+    .eq("id", session.user_id)
+    .maybeSingle();
+
+  if (userError || !user || !user.is_active) {
+    return { valid: false, error: "用户账号已被禁用" };
+  }
+
+  return { valid: true, userId: session.user_id };
+}
+
+// Helper function to check if user has a specific role
+async function hasRole(supabase: any, userId: string, requiredRole: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("role", requiredRole)
+    .maybeSingle();
+
+  return !!data;
+}
+
+// Helper function to check if user has any of the specified roles
+async function hasAnyRole(supabase: any, userId: string, requiredRoles: string[]): Promise<boolean> {
+  const { data } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .in("role", requiredRoles);
+
+  return data && data.length > 0;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -21,19 +87,52 @@ serve(async (req) => {
     const path = url.pathname.replace("/admin-api", "");
     const method = req.method;
 
-    // 验证session（除了公开接口）
-    if (!path.startsWith("/public/")) {
-      const authHeader = req.headers.get("Authorization");
-      if (!authHeader) {
+    // Public endpoints don't require authentication
+    if (path.startsWith("/public/")) {
+      // Handle public endpoints
+      if (path === "/public/workflows" && method === "GET") {
+        const { data, error } = await supabase
+          .from("workflows")
+          .select("id, title, description, video_path, markdown_content, created_at")
+          .eq("is_public", true)
+          .order("created_at", { ascending: false });
+
+        if (error) throw error;
+
         return new Response(
-          JSON.stringify({ error: "未授权访问" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          JSON.stringify({ data }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
+
+      return new Response(
+        JSON.stringify({ error: "接口不存在" }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // ===== 用户管理 =====
+    // Validate session for all non-public endpoints
+    const authHeader = req.headers.get("Authorization");
+    const sessionResult = await validateSession(supabase, authHeader);
+
+    if (!sessionResult.valid) {
+      return new Response(
+        JSON.stringify({ error: sessionResult.error }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const userId = sessionResult.userId!;
+
+    // ===== 用户管理 (requires admin role) =====
     if (path === "/users" && method === "GET") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const { data, error } = await supabase
         .from("users")
         .select("id, username, display_name, email, is_active, created_at, updated_at")
@@ -58,6 +157,13 @@ serve(async (req) => {
     }
 
     if (path === "/users" && method === "POST") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const body = await req.json();
       const { username, passwordHash, display_name, email, is_active, roles } = body;
 
@@ -100,6 +206,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/users/") && method === "PUT") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const id = path.split("/")[2];
       const body = await req.json();
       const { username, passwordHash, display_name, email, is_active, roles } = body;
@@ -135,6 +248,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/users/") && method === "DELETE") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const id = path.split("/")[2];
 
       if (id === "00000000-0000-0000-0000-000000000001") {
@@ -153,8 +273,15 @@ serve(async (req) => {
       );
     }
 
-    // ===== 角色管理 =====
+    // ===== 角色管理 (requires admin role) =====
     if (path === "/roles" && method === "GET") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const roles = ["admin", "user", "viewer"];
       const rolesWithMenus = await Promise.all(
         roles.map(async (role) => {
@@ -176,6 +303,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/roles/") && path.endsWith("/menus") && method === "PUT") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const role = path.split("/")[2];
       const body = await req.json();
       const { menu_ids } = body;
@@ -193,8 +327,15 @@ serve(async (req) => {
       );
     }
 
-    // ===== 菜单管理 =====
+    // ===== 菜单管理 (requires admin role) =====
     if (path === "/menus" && method === "GET") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const { data, error } = await supabase
         .from("menus")
         .select("*")
@@ -209,6 +350,13 @@ serve(async (req) => {
     }
 
     if (path === "/menus" && method === "POST") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const body = await req.json();
       const { name, path: menuPath, icon, parent_id, sort_order, is_visible } = body;
 
@@ -227,6 +375,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/menus/") && method === "PUT") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const id = path.split("/")[2];
       const body = await req.json();
       const { name, path: menuPath, icon, parent_id, sort_order, is_visible } = body;
@@ -247,6 +402,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/menus/") && method === "DELETE") {
+      if (!await hasRole(supabase, userId, "admin")) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const id = path.split("/")[2];
       const { error } = await supabase.from("menus").delete().eq("id", id);
       if (error) throw error;
@@ -257,8 +419,15 @@ serve(async (req) => {
       );
     }
 
-    // ===== 安装包管理 =====
+    // ===== 安装包管理 (requires admin or user role) =====
     if (path === "/packages" && method === "GET") {
+      if (!await hasAnyRole(supabase, userId, ["admin", "user"])) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const { data, error } = await supabase
         .from("packages")
         .select("*, users(username, display_name)")
@@ -273,6 +442,13 @@ serve(async (req) => {
     }
 
     if (path === "/packages" && method === "POST") {
+      if (!await hasAnyRole(supabase, userId, ["admin", "user"])) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const body = await req.json();
       const { name, description, file_path, file_size, version, uploaded_by } = body;
 
@@ -298,6 +474,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/packages/") && method === "PUT") {
+      if (!await hasAnyRole(supabase, userId, ["admin", "user"])) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const id = path.split("/")[2];
       const body = await req.json();
       const { name, description, version } = body;
@@ -318,6 +501,13 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/packages/") && method === "DELETE") {
+      if (!await hasAnyRole(supabase, userId, ["admin", "user"])) {
+        return new Response(
+          JSON.stringify({ error: "权限不足" }),
+          { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
       const id = path.split("/")[2];
 
       const { data: pkg } = await supabase
@@ -339,8 +529,9 @@ serve(async (req) => {
       );
     }
 
-    // ===== 流程管理 =====
+    // ===== 流程管理 (requires authenticated user) =====
     if (path === "/workflows" && method === "GET") {
+      // Any authenticated user can view workflows
       const { data, error } = await supabase
         .from("workflows")
         .select("*, users(username, display_name)")
@@ -355,6 +546,7 @@ serve(async (req) => {
     }
 
     if (path === "/workflows" && method === "POST") {
+      // Any authenticated user can create workflows
       const body = await req.json();
       const { title, description, video_path, video_size, markdown_content, is_public, uploaded_by } = body;
 
@@ -380,6 +572,7 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/workflows/") && method === "PUT") {
+      // Any authenticated user can update workflows
       const id = path.split("/")[2];
       const body = await req.json();
       const { title, description, video_path, video_size, markdown_content, is_public } = body;
@@ -406,6 +599,7 @@ serve(async (req) => {
     }
 
     if (path.startsWith("/workflows/") && method === "DELETE") {
+      // Any authenticated user can delete workflows
       const id = path.split("/")[2];
 
       const { data: workflow } = await supabase
@@ -423,22 +617,6 @@ serve(async (req) => {
 
       return new Response(
         JSON.stringify({ success: true }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // ===== 公开接口：获取公开流程 =====
-    if (path === "/public/workflows" && method === "GET") {
-      const { data, error } = await supabase
-        .from("workflows")
-        .select("id, title, description, video_path, markdown_content, created_at")
-        .eq("is_public", true)
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-
-      return new Response(
-        JSON.stringify({ data }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

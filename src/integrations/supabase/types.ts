@@ -131,6 +131,38 @@ export type Database = {
           },
         ]
       }
+      sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          id: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          id?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -245,6 +277,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      cleanup_expired_sessions: { Args: never; Returns: undefined }
       get_current_user_id: { Args: never; Returns: string }
       has_role: {
         Args: {
@@ -253,10 +286,9 @@ export type Database = {
         }
         Returns: boolean
       }
-      verify_session: {
-        Args: { session_token: string; user_id: string }
-        Returns: boolean
-      }
+      verify_session:
+        | { Args: { session_token: string }; Returns: Record<string, unknown> }
+        | { Args: { session_token: string; user_id: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "user" | "viewer"

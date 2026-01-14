@@ -26,6 +26,13 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+    // Clean up expired sessions periodically
+    try {
+      await supabase.rpc("cleanup_expired_sessions");
+    } catch {
+      // Ignore cleanup errors
+    }
+
     const { data: user, error: queryError } = await supabase
       .from("users")
       .select("id, username, password_hash, display_name, is_active")
@@ -95,7 +102,32 @@ serve(async (req) => {
       return acc;
     }, []).sort((a: any, b: any) => a.sort_order - b.sort_order) || [];
 
+    // Generate a secure session token and store it in the database
     const sessionToken = crypto.randomUUID();
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Delete any existing sessions for this user (single session per user)
+    await supabase
+      .from("sessions")
+      .delete()
+      .eq("user_id", user.id);
+
+    // Create new session
+    const { error: sessionError } = await supabase
+      .from("sessions")
+      .insert({
+        user_id: user.id,
+        token: sessionToken,
+        expires_at: expiresAt.toISOString(),
+      });
+
+    if (sessionError) {
+      console.error("Session creation error:", sessionError);
+      return new Response(
+        JSON.stringify({ success: false, error: "会话创建失败" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     return new Response(
       JSON.stringify({
