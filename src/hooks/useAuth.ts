@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { hashPassword } from "@/lib/crypto";
 
 export interface UserSession {
   id: string;
@@ -42,8 +43,11 @@ export function useAuth() {
   const login = useCallback(async (username: string, password: string) => {
     setIsLoading(true);
     try {
+      // 前端先对密码进行SHA-256 hash，避免明文传输
+      const passwordHash = await hashPassword(password);
+      
       const { data, error } = await supabase.functions.invoke("admin-login", {
-        body: { username, password },
+        body: { username, passwordHash },
       });
 
       if (error) throw new Error("验证失败，请稍后重试");

@@ -59,20 +59,21 @@ serve(async (req) => {
 
     if (path === "/users" && method === "POST") {
       const body = await req.json();
-      const { username, password, display_name, email, is_active, roles } = body;
+      const { username, passwordHash, display_name, email, is_active, roles } = body;
 
-      if (!username || !password) {
+      if (!username || !passwordHash) {
         return new Response(
           JSON.stringify({ error: "用户名和密码不能为空" }),
           { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
-      const passwordHash = bcrypt.hashSync(password, 10);
+      // 前端已SHA-256，后端再bcrypt加密存储
+      const finalPasswordHash = bcrypt.hashSync(passwordHash, 10);
 
       const { data: user, error } = await supabase
         .from("users")
-        .insert({ username, password_hash: passwordHash, display_name, email, is_active: is_active ?? true })
+        .insert({ username, password_hash: finalPasswordHash, display_name, email, is_active: is_active ?? true })
         .select()
         .single();
 
@@ -101,11 +102,12 @@ serve(async (req) => {
     if (path.startsWith("/users/") && method === "PUT") {
       const id = path.split("/")[2];
       const body = await req.json();
-      const { username, password, display_name, email, is_active, roles } = body;
+      const { username, passwordHash, display_name, email, is_active, roles } = body;
 
       const updateData: any = { username, display_name, email, is_active };
-      if (password) {
-        updateData.password_hash = bcrypt.hashSync(password, 10);
+      if (passwordHash) {
+        // 前端已SHA-256，后端再bcrypt加密存储
+        updateData.password_hash = bcrypt.hashSync(passwordHash, 10);
       }
 
       const { data: user, error } = await supabase
